@@ -35,8 +35,8 @@ def log_video(env, agent, device, video_path, fps=30):
             action, _, _, _ = agent.get_action_and_value(
                 torch.tensor(np.array([obs], dtype=np.float32), device=device))
         # Step the environment
-        obs, _, terminated, truncated, _ = env.step(action.squeeze(0).cpu().numpy())
-        done = terminated or truncated
+        obs, _, terminated, _, _ = env.step(action.squeeze(0).cpu().numpy())
+        done = terminated
     # Save the video
     out = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frames[0].shape[1], frames[0].shape[0]))
     for frame in frames:
@@ -129,7 +129,8 @@ if __name__ == "__main__":
     global_step_idx = 0
     start_time = time.time()
     next_obs = torch.tensor(np.array(envs.reset()[0], dtype=np.float32), device=device)
-    next_dones = torch.tensor([float(False)] * args.n_envs, device=device)
+    next_terminateds = torch.tensor([float(False)] * args.n_envs, device=device)
+    next_truncateds = torch.tensor([float(False)] * args.n_envs, device=device)
 
     reward_list = []
 
@@ -139,7 +140,8 @@ if __name__ == "__main__":
             for step_idx in range(0, args.n_steps):
                 global_step_idx += args.n_envs
                 obs = next_obs
-                dones = next_dones
+                terminateds = next_terminateds
+                truncateds = next_truncateds
 
                 # Sample the actions
                 with torch.no_grad():
@@ -147,25 +149,28 @@ if __name__ == "__main__":
                     values = values.flatten()
 
                 # Step the environment
-                next_obs, rewards, terminateds, truncateds, _ = envs.step(actions.cpu().numpy())
+                next_obs, rewards, next_terminateds, next_truncateds, _ = envs.step(actions.cpu().numpy())
                 # parse everything to tensors
                 next_obs = torch.tensor(np.array(next_obs, dtype=np.float32), device=device)
                 reward_list.extend(rewards)
                 rewards = torch.tensor(rewards, device=device).view(-1)
-                next_dones = torch.tensor([float(t or d) for t, d in zip(terminateds, truncateds)], device=device)
+                next_terminateds = torch.tensor([float(term) for term in next_terminateds], device=device)
+                next_truncateds = torch.tensor([float(trunc) for trunc in next_truncateds], device=device)
 
                 # Store the step in the buffer
-                buffer.store(obs, actions, rewards, values, dones, logprobs)
+                buffer.store(obs, actions, rewards, values, terminateds, truncateds, logprobs)
 
             # After the trajectories are collected, calculate the advantages and returns
             with torch.no_grad():
-                # Calculate a bootstrap value if the episode is not done
+                # Finish the last step of the buffer with the value of the last state
+                # and the terminated and truncated flags
                 next_values = agent.get_value(next_obs).reshape(1, -1)
-                next_dones = next_dones.reshape(1, -1)
-                traj_adv, traj_ret = buffer.calculate_advantages(next_values, next_dones)
+                next_terminateds = next_terminateds.reshape(1, -1)
+                next_truncateds = next_truncateds.reshape(1, -1)
+                traj_adv, traj_ret = buffer.calculate_advantages(next_values, next_terminateds, next_truncateds)
 
             # Get the stored trajectories from the buffer
-            traj_obs, traj_act, _, traj_val, _, traj_logprob = buffer.get()
+            traj_obs, traj_act, traj_val, traj_logprob = buffer.get()
 
             # Flatten the trajectories
             traj_obs = traj_obs.view(-1, *obs_dim)
@@ -244,7 +249,6 @@ if __name__ == "__main__":
 
             # Every n epochs, save the model
             if epoch % args.save_epoch == 0:
-                # Save the model
                 torch.save(agent.state_dict(), os.path.join(checkpoint_dir, f"checkpoint_{epoch}.dat"))
 
             # Log everything to tensorboard
