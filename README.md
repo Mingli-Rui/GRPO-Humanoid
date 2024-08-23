@@ -150,14 +150,18 @@ The following charts provide insights into the performance during training:
 - **Reward**:
   ![Reward](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/charts_avg_reward.svg)
 
-As seen in the chart, the agent's average reward is still increasing after 3000 epochs,
-indicating that the agent has not yet reached its full potential and could benefit from further training.
+  As seen in the chart, the agent's average reward is still increasing after 3000 epochs,
+  indicating that the agent has not yet reached its full potential and could benefit from further training.
 
 - **Policy Loss**:
   ![Policy Loss](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/losses_policy_loss.svg)
 
 - **Value Loss**:
   ![Value Loss](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/losses_value_loss.svg)
+
+  In the chart above, the value loss first increases and then decreases until it plateaus after 100M steps. This
+  behavior is expected as the agent first explores the environment and then learns to predict the value of states more
+  accurately.
 
 - **Entropy Loss**:
   ![Entropy](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/losses_entropy.svg)
