@@ -88,7 +88,7 @@ environment.
 You can customize the training by modifying the command-line arguments:
 
 - `--n-envs`: Number of environments to run in parallel (default: 48).
-- `--n-epochs`: Number of epochs to train the model (default: 5000).
+- `--n-epochs`: Number of epochs to train the model (default: 3000).
 - `--n-steps`: Number of steps per environment per epoch (default: 1024).
 - `--batch-size`: Batch size for training (default: 8192).
 - `--train-iters`: Number of training iterations per epoch (default: 20).
