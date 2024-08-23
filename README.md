@@ -8,9 +8,9 @@ learning.
 
 ## Results
 
-(insert gif here)
+![Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
 
-Here is a demonstration of the agent's performance after training for X epochs on the Humanoid-v4 environment.
+Here is a demonstration of the agent's performance after training for 3000 epochs on the Humanoid-v4 environment.
 
 ---
 
@@ -101,3 +101,63 @@ python train.py --run-name "experiment_1" --n-envs 64 --batch-size 4096 --train-
 
 All hyperparameters can be viewed either with `python train.py --help` or by looking at the
 parse_args() function in `train.py`.
+
+---
+
+## Performance
+
+Here are the specifications of the system used for training:
+
+- **CPU**: AMD Ryzen 9 5900X
+- **GPU**: Nvidia RTX 3080 (12GB VRAM)
+- **RAM**: 64GB DDR4
+- **OS**: Windows 11
+
+The training process took about 5 hours to complete 3000 epochs on the Humanoid-v4 environment.
+
+### Hyperparameters
+
+The hyperparameters used for training are as follows:
+
+| param               | value       | 
+|---------------------|-------------| 
+| run_name            | baseline    | 
+| cuda                | True        | 
+| env                 | Humanoid-v4 |
+| n_envs              | 48          |
+| n_epochs            | 3000        |
+| n_steps             | 1024        |
+| batch_size          | 8192        | 
+| train_iters         | 20          | 
+| gamma               | 0.995       | 
+| gae_lambda          | 0.98        |
+| clip_ratio          | 0.1         | 
+| ent_coef            | 1e-05       |
+| vf_coef             | 1.0         |
+| learning_rate       | 0.0003      | 
+| learning_rate_decay | 0.999       |
+| max_grad_norm       | 1.0         | 
+| reward_scale        | 0.005       | 
+| render_epoch        | 50          |
+| save_epoch          | 200         |
+
+### Statistics
+
+### Performance Metrics:
+
+The following charts provide insights into the performance during training:
+
+- **Reward**:
+  ![Reward](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/charts_avg_reward.svg)
+
+As seen in the chart, the agent's average reward is still increasing after 3000 epochs,
+indicating that the agent has not yet reached its full potential and could benefit from further training.
+
+- **Policy Loss**:
+  ![Policy Loss](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/losses_policy_loss.svg)
+
+- **Value Loss**:
+  ![Value Loss](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/losses_value_loss.svg)
+
+- **Entropy Loss**:
+  ![Entropy](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/losses_entropy.svg)
