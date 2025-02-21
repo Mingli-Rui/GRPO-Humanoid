@@ -40,6 +40,8 @@ To get started with this project, follow these steps:
    You need to install the Mujoco environment to simulate the humanoid:
     ```bash
     pip install gymnasium[mujoco]
+    # NOTE: You may need to quote the name on Mac
+    pip install "gymnasium[mujoco]"
     ```
 
 5. **Train the Model**:
