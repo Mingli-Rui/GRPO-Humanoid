@@ -109,6 +109,68 @@ def parse_args():
 #         # Ensure state is applied correctly
 #         env.data = mj_data
 
+class CustomHumanoidEnv(gym.Env):
+    """ Subclass Humanoid-v4 to add a physics update method. """
+    def __init__(self, env_id, reward_scaling=1.0, render=False, fps=30):
+        if render:
+            env = gym.make(env_id, render_mode='rgb_array')
+            env.metadata['render_fps'] = fps
+        else:
+            env = gym.make(env_id)
+
+        # Apply reward scaling
+        env = gym.wrappers.TransformReward(env, lambda r: r * reward_scaling)
+
+        # Unwrap to access MuJoCo-specific functions
+        self._env = env.unwrapped
+
+        # Set core environment properties
+        self.observation_space = env.observation_space
+        self.action_space = env.action_space
+        self.metadata = env.metadata
+
+    def reset(self, **kwargs):
+        """ Reset environment and return initial observation. """
+        return self._env.reset(**kwargs)
+
+    def step(self, action):
+        """ Step environment with given action. """
+        return self._env.step(action)
+
+    def set_state(self, qpos, qvel):
+        """ Set the state (qpos, qvel) in MuJoCo and reset other physics-related parameters. """
+        self._env.data.qpos[:] = qpos
+        self._env.data.qvel[:] = qvel
+
+        # ✅ Reset actuator forces (to prevent lingering torque)
+        self._env.data.act[:] = 0
+
+        # ✅ Reset control signals
+        self._env.data.ctrl[:] = 0
+
+        # ✅ Reset contact forces (important for stability)
+        self._env.data.qfrc_applied[:] = 0
+        self._env.data.xfrc_applied[:] = 0
+
+        # ✅ Apply the changes to the physics engine
+        mujoco.mj_forward(self._env.model, self._env.data)
+
+    def forward_physics_update(self):
+        """ Ensure MuJoCo physics is updated correctly. """
+        mujoco.mj_forward(self._env.model, self._env.data)
+
+
+def make_env_new(env_id, reward_scaling=1.0, render=False, fps=30):
+    """
+    Make an environment with the given id.
+    :param env_id: the id of the environment.
+    :param reward_scaling: the scaling factor for the rewards.
+    :param render: whether to render the environment.
+    :param fps: the frames per second if rendering.
+    :return: the environment.
+    """
+    return CustomHumanoidEnv(env_id, reward_scaling, render, fps)
+
 
 if __name__ == "__main__":
     args = parse_args()
@@ -138,8 +200,8 @@ if __name__ == "__main__":
 
     # Create the environments
     seed_env = gym.make(args.env)
-    envs = gym.vector.SyncVectorEnv(
-        [lambda: make_env(args.env, reward_scaling=args.reward_scale) for _ in range(args.n_envs)])
+    envs = gym.vector.AsyncVectorEnv(
+        [lambda: make_env_new(args.env, reward_scaling=args.reward_scale) for _ in range(args.n_envs)])
     test_env = make_env(args.env, reward_scaling=args.reward_scale, render=True)
     obs_dim = envs.single_observation_space.shape
     act_dim = envs.single_action_space.shape
@@ -195,16 +257,21 @@ if __name__ == "__main__":
             # Reset envs to initialize memory
             obs, _ = envs.reset()
 
-            for i in range(args.n_envs):
-                env_instance = envs.envs[i].unwrapped  # Access unwrapped MuJoCo env
-                mj_data = env_instance.data  # Get MuJoCo data structure
+            envs.call("set_state", saved_state["qpos"], saved_state["qvel"])
 
-                # Apply saved state
-                mj_data.qpos[:] = saved_state["qpos"]
-                mj_data.qvel[:] = saved_state["qvel"]
+            # ✅ Ensure physics updates for all envs
+            envs.call("forward_physics_update")
 
-                # ✅ Ensure physics updates (Corrected)
-                mujoco.mj_forward(env_instance.model, mj_data)  # Correct function
+            # for i in range(args.n_envs):
+            #     env_instance = envs.envs[i].unwrapped  # Access unwrapped MuJoCo env
+            #     mj_data = env_instance.data  # Get MuJoCo data structure
+            #
+            #     # Apply saved state
+            #     mj_data.qpos[:] = saved_state["qpos"]
+            #     mj_data.qvel[:] = saved_state["qvel"]
+            #
+            #     # ✅ Ensure physics updates (Corrected)
+            #     mujoco.mj_forward(env_instance.model, mj_data)  # Correct function
 
             # Collect trajectories
             not_done = torch.tensor(np.ones((1, args.n_envs), dtype=np.float32))
@@ -236,8 +303,7 @@ if __name__ == "__main__":
                 # Store the step in the buffer
                 buffer.store(obs, actions, rewards, values, terminateds, truncateds, logprobs)
                 not_done = not_done * (1 - next_terminateds) * (1 - next_truncateds)
-                # print(f'step: {step_idx}, {shortest_traj} - {(args.n_envs - 1e-10)} / {longest_traj} {not_done.sum()} {not_done}')
-                if not_done.sum() >= (args.n_envs - 1e-10):
+                if not_done.sum() >= (len(not_done) - 1e-10):
                     shortest_traj = step_idx
                 elif not_done.sum() <= 1e-10:
                     # longest_traj = torch.argmax(next_truncateds)
@@ -345,7 +411,7 @@ if __name__ == "__main__":
             # Rescale the rewards
             avg_reward /= args.reward_scale
             print(f"Epoch {epoch} done in {time.time() - start_time:.2f}s. "
-                  f"Skip/Shortest/Longest/Max: {skip_step_num} / {shortest_traj} / {longest_traj} {args.n_steps}. "
+                  f"Skip/Shortest/Longest/Max: {skip_step_num} /{shortest_traj} /{longest_traj} /{args.n_steps}. "
                   f"Avg reward: {avg_reward:.2f}. ")
             reward_list = []
 
