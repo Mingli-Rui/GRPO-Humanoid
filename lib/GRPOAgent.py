@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+LOGSTD_MIN = -10.0
+LOGSTD_MAX = 2.0
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -47,7 +49,8 @@ class GRPOAgent(nn.Module):
 
     def forward(self, x):
         mu = self.actor_mu(x)
-        std = torch.exp(self.actor_logstd).expand_as(mu)
+        log_std = torch.clamp(self.actor_logstd, LOGSTD_MIN, LOGSTD_MAX)
+        std = torch.exp(log_std).expand_as(mu)
         return mu, std
 
     # def get_value(self, x):

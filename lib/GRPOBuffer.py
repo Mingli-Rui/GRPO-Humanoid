@@ -119,6 +119,9 @@ class GRPOBuffer:
         self.ptr = 0
         return self.obs_buf, self.act_buf, self.val_buf, self.logprob_buf
 
+    def reset(self):
+        self.ptr = 0
+
     def get_returns(self):
         # Check if the Buffer is full
         assert self.ptr == self.capacity, "Buffer not full"

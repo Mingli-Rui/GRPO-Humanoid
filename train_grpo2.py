@@ -1,12 +1,10 @@
 import argparse
 import datetime
 import os
-import random
 import time
 
 import cv2
 import gymnasium as gym
-import mujoco
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,8 +12,7 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 
 from lib.GRPOAgent import GRPOAgent
-from lib.GRPOBuffer import GRPOBuffer
-from lib.BufferGroup import BufferGroup
+from lib.GRPOBuffer2 import GRPOBuffer2
 
 
 def log_video(env, agent, device, video_path, fps=30):
@@ -87,38 +84,8 @@ def parse_args():
     parser.add_argument("--reward-scale", type=float, default=0.005, help="Reward scaling")
     parser.add_argument("--render-epoch", type=int, default=50, help="Render every n-th epoch")
     parser.add_argument("--save-epoch", type=int, default=200, help="Save the model every n-th epoch")
-    parser.add_argument("--group-size", type=int, default=10, help="Group size for GRPO")
-    parser.add_argument("--seed", type=int, default=0)
-
     return parser.parse_args()
 
-
-# def reset_state(envs, num_envs, saved_states):
-#     for i in range(num_envs):
-#         env = envs.envs[i].unwrapped  # Unwrap to get raw MuJoCo env
-#         mj_data = env.data  # MuJoCo state data
-#
-#         # Set qpos (joint positions) and qvel (joint velocities)
-#         mj_data.qpos[:] = saved_states[i].qpos
-#         mj_data.qvel[:] = saved_states[i].qvel
-#
-#         # Ensure physics is updated
-#         env.model.step()  # Updates model state
-#
-#         # Perform a forward pass to update simulation
-#         env.mujoco_renderer.sim_forward()
-#
-#         # Ensure state is applied correctly
-#         env.data = mj_data
-
-def seed_everything(seed):
-    # random.seed(seed)
-    np.random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.manual_seed(seed)
-    # torch.cuda.manual_seed(seed)
-    # torch.backends.cudnn.deterministic = True
-    # env.seed(seed)
 
 if __name__ == "__main__":
     args = parse_args()
@@ -147,10 +114,10 @@ if __name__ == "__main__":
     )
 
     # Create the environments
-    seed_env = make_env(args.env, reward_scaling=args.reward_scale, render=False)
-    random.seed(args.seed)
-    envs = gym.vector.SyncVectorEnv(
+    envs = gym.vector.AsyncVectorEnv(
         [lambda: make_env(args.env, reward_scaling=args.reward_scale) for _ in range(args.n_envs)])
+    # envs = gym.vector.SyncVectorEnv(
+    #     [lambda: make_env(args.env, reward_scaling=args.reward_scale) for _ in range(args.n_envs)])
     test_env = make_env(args.env, reward_scaling=args.reward_scale, render=True)
     obs_dim = envs.single_observation_space.shape
     act_dim = envs.single_action_space.shape
@@ -164,10 +131,7 @@ if __name__ == "__main__":
     # print(agent.critic)
 
     # Create the buffer
-    buffer = GRPOBuffer(obs_dim, act_dim, args.n_steps, args.n_envs, device, args.gamma, args.gae_lambda)
-    assert args.batch_size % args.n_envs == 0
-    batch_chunk_num = args.batch_size // args.n_envs
-    buffer_group = BufferGroup(obs_dim, act_dim, batch_chunk_num, args.n_envs, device)
+    buffer = GRPOBuffer2(obs_dim, act_dim, args.n_steps, args.n_envs, device, args.gamma, args.gae_lambda)
 
     # Start the training
     global_step_idx = 0
@@ -177,118 +141,52 @@ if __name__ == "__main__":
     next_truncateds = torch.tensor([float(False)] * args.n_envs, device=device)
 
     reward_list = []
-    shortest_traj = 0
-    longest_traj = args.n_steps
 
     try:
         for epoch in range(1, args.n_epochs + 1):
-            for _ in range(batch_chunk_num):
-                # Get starting state
-                max_skip_step_num = min(shortest_traj, args.n_steps)
-                skip_step_num = random.randint(0, max_skip_step_num)
-                shortest_traj = 0
-                longest_traj = 0
-                seed_everything(args.seed)
-                # Reset and take some steps in the seed environment
-                obs, _ = seed_env.reset(seed=args.seed)
-                # if skip_step_num > 0:
-                #     print(f'skip {skip_step_num} for training')
-                pre_rewards = 0.0
-                for skip_step in range(skip_step_num):  # Explore 10 steps
-                    with torch.no_grad():
-                        obs = torch.tensor(np.array(obs, dtype=np.float32), device=device)
-                        action, _, _, _ = agent.get_action_and_value(obs)
-                    obs, reward, done, truncated, _ = seed_env.step(action.cpu().numpy())
-                    pre_rewards += reward
-                    if done or truncated:
-                        print(f"meet: skip_step {skip_step}")
-                        pre_rewards = 0.0
-                        obs, _ = seed_env.reset(seed=args.seed)  # Reset if episode ends
+            # Collect trajectories
+            for step_idx in range(0, args.n_steps):
+                global_step_idx += args.n_envs
+                obs = next_obs
+                terminateds = next_terminateds
+                truncateds = next_truncateds
 
-                # Save the final state from the seed environment
-                saved_state = {
-                    "qpos": seed_env.unwrapped.data.qpos.copy(),
-                    "qvel": seed_env.unwrapped.data.qvel.copy()
-                }
-
-                # Reset envs to initialize memory
-                obs, _ = envs.reset(seed=args.seed)
-
-                for i in range(args.n_envs):
-                    env_instance = envs.envs[i].unwrapped  # Access unwrapped MuJoCo env
-                    mj_data = env_instance.data  # Get MuJoCo data structure
-
-                    # Apply saved state
-                    mj_data.qpos[:] = saved_state["qpos"]
-                    mj_data.qvel[:] = saved_state["qvel"]
-
-                    # ✅ Ensure physics updates (Corrected)
-                    mujoco.mj_forward(env_instance.model, mj_data)  # Correct function
-
-                # Collect trajectories
-                not_done = torch.tensor(np.ones((1, args.n_envs), dtype=np.float32))
-                for step_idx in range(0, args.n_steps):
-                    global_step_idx += args.n_envs
-                    obs = next_obs
-                    terminateds = next_terminateds
-                    truncateds = next_truncateds
-
-                    # Sample the actions
-                    with torch.no_grad():
-                        actions, logprobs, _, values = agent.get_action_and_value(obs)
-                        # values = values.flatten()
-
-                    # Step the environment
-                    next_obs, rewards, next_terminateds, next_truncateds, _ = envs.step(actions.cpu().numpy())
-
-                    # # TODO: debugging
-                    # if next_terminateds.sum() > 0.5 or next_truncateds.sum() > 0.5:
-                    #     # some trajectory are truncated or terminated.
-                    #     print(f'step: {step_idx}, {next_terminateds.sum()}, {next_truncateds.sum()}')
-                    # parse everything to tensors
-                    next_obs = torch.tensor(np.array(next_obs, dtype=np.float32), device=device)
-                    reward_list.extend(rewards)
-                    rewards = torch.tensor(rewards, dtype=torch.float32, device=device).view(-1)
-                    next_terminateds = torch.tensor([float(term) for term in next_terminateds], device=device)
-                    next_truncateds = torch.tensor([float(trunc) for trunc in next_truncateds], device=device)
-
-                    # Store the step in the buffer
-                    buffer.store(obs, actions, rewards, values, terminateds, truncateds, logprobs)
-                    not_done = not_done * (1 - next_terminateds) * (1 - next_truncateds)
-                    # print(f'step: {step_idx}, {shortest_traj} - {(args.n_envs - 1e-10)} / {longest_traj} {not_done.sum()} {not_done}')
-                    if not_done.sum() >= (args.n_envs - 1e-10):
-                        shortest_traj = step_idx
-                    elif not_done.sum() <= 1e-10:
-                        # longest_traj = torch.argmax(next_truncateds)
-                        longest_traj = step_idx
-                        # print(f'early-terminated after {step_idx} steps')
-                        # epsilon = 0.5
-                        # if random.random() > epsilon:
-                        #     new_start_state = buffer.get_candidate_state(longest, step_idx).detach().numpy()
-                        # else:
-                        #     new_start_state = envs.reset()[0]
-                        # reset_state(envs, args.n_envs, new_start_state)
-                        buffer.early_terminate()
-                        break
-
-                # After the trajectories are collected, calculate the advantages and returns
+                # Sample the actions
                 with torch.no_grad():
-                    # Finish the last step of the buffer with the value of the last state
-                    # and the terminated and truncated flags
-                    # next_values = agent.get_value(next_obs).reshape(1, -1)
-                    next_terminateds = next_terminateds.reshape(1, -1)
-                    next_truncateds = next_truncateds.reshape(1, -1)
-                    # traj_adv, traj_ret = buffer.calculate_grpo_advantages(next_terminateds, next_truncateds)
-                    buffer_group.add(buffer, next_terminateds, next_truncateds)
+                    actions, logprobs, _, values = agent.get_action_and_value(obs)
+                    # values = values.flatten()
 
-            # Get one batch
-            traj_adv, traj_ret, traj_obs, traj_act, traj_logprob = buffer_group.get()
+                # Step the environment
+                next_obs, rewards, next_terminateds, next_truncateds, _ = envs.step(actions.cpu().numpy())
+
+                # # TODO: debugging
+                # if next_terminateds.sum() > 0.5 or next_truncateds.sum() > 0.5:
+                #     # some trajectory are truncated or terminated.
+                #     print(f'step: {step_idx}, {next_terminateds.sum()}, {next_truncateds.sum()}')
+                # parse everything to tensors
+                next_obs = torch.tensor(np.array(next_obs, dtype=np.float32), device=device)
+                reward_list.extend(rewards)
+                rewards = torch.tensor(rewards, dtype=torch.float32, device=device).view(-1)
+                next_terminateds = torch.tensor([float(term) for term in next_terminateds], device=device)
+                next_truncateds = torch.tensor([float(trunc) for trunc in next_truncateds], device=device)
+
+                # Store the step in the buffer
+                # buffer.store(obs, actions, rewards, values, terminateds, truncateds, logprobs)
+                buffer.store(obs, actions, rewards, None, terminateds, truncateds, logprobs)
+
+            # After the trajectories are collected, calculate the advantages and returns
+            with torch.no_grad():
+                # Finish the last step of the buffer with the value of the last state
+                # and the terminated and truncated flags
+                # next_values = agent.get_value(next_obs).reshape(1, -1)
+                next_terminateds = next_terminateds.reshape(1, -1)
+                next_truncateds = next_truncateds.reshape(1, -1)
+                # traj_adv, traj_ret = buffer.calculate_advantages(next_values, next_terminateds, next_truncateds)
+                traj_adv, traj_ret = buffer.calculate_advantages(next_terminateds, next_truncateds)
 
             # Get the stored trajectories from the buffer
-            # traj_obs, traj_act, traj_val, traj_logprob = buffer.get()
+            traj_obs, traj_act, traj_val, traj_logprob = buffer.get()
 
-            # TODO: get first state only for training.
-            # traj_obs, traj_act, traj_val, traj_logprob = traj_obs[0], traj_act[0], traj_val[0], traj_logprob[0]
             # Flatten the trajectories
             traj_obs = traj_obs.view(-1, *obs_dim)
             traj_act = traj_act.view(-1, *act_dim)
@@ -297,10 +195,8 @@ if __name__ == "__main__":
             traj_ret = traj_ret.view(-1)
             # traj_val = traj_val.view(-1)
 
-            # TODO: only have one state not n_steps
             # Create an array of indices to sample from the trajectories
-            # traj_indices = np.arange(args.n_steps * args.n_envs)
-            traj_indices = np.arange(args.batch_size)
+            traj_indices = np.arange(args.n_steps * args.n_envs)
 
             sum_loss_policy = 0.0
             sum_loss_value = 0.0
@@ -311,9 +207,7 @@ if __name__ == "__main__":
                 np.random.shuffle(traj_indices)
 
                 # Iterate over the batches
-                # TODO: Only one record, don't need this loop
-                # for start_idx in range(0, args.n_steps, args.batch_size):
-                for start_idx in range(0, 1):
+                for start_idx in range(0, args.n_steps, args.batch_size):
                     end_idx = start_idx + args.batch_size
                     batch_indices = traj_indices[start_idx:end_idx]
 
@@ -336,7 +230,6 @@ if __name__ == "__main__":
                     # policy_loss1 = batch_adv * ratios
                     # policy_loss2 = batch_adv * torch.clamp(ratios, 1.0 - args.clip_ratio, 1.0 + args.clip_ratio)
                     # policy_loss = torch.min(policy_loss1, policy_loss2).mean()
-
 
                     # # Calculate the value loss
                     # new_values = new_values.view(-1)
@@ -368,8 +261,7 @@ if __name__ == "__main__":
             # Rescale the rewards
             avg_reward /= args.reward_scale
             print(f"Epoch {epoch} done in {time.time() - start_time:.2f}s. "
-                  f"Skip/Shortest/Longest/Max: {skip_step_num} / {shortest_traj} / {longest_traj} {args.n_steps}. "
-                  f"Avg reward: {(avg_reward + pre_rewards):.2f}. ")  # TODO: Need to revise pre_rewards. skipped reward is shared with all arms.
+                  f"Avg reward: {avg_reward:.2f}. ")
             reward_list = []
 
             # Every n epochs, log the video
@@ -392,7 +284,6 @@ if __name__ == "__main__":
     finally:
         # Close the environments and tensorboard writer
         envs.close()
-        seed_env.close()
         test_env.close()
         writer.close()
 
