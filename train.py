@@ -155,6 +155,11 @@ if __name__ == "__main__":
 
                 # Step the environment
                 next_obs, rewards, next_terminateds, next_truncateds, _ = envs.step(actions.cpu().numpy())
+
+                # TODO: debugging
+                if next_terminateds.sum() > 0.5 or next_truncateds.sum() > 0.5:
+                    # some trajectory are truncated or terminated.
+                    print(f'step: {step_idx}, {next_terminateds.sum()}, {next_truncateds.sum()}')
                 # parse everything to tensors
                 next_obs = torch.tensor(np.array(next_obs, dtype=np.float32), device=device)
                 reward_list.extend(rewards)
