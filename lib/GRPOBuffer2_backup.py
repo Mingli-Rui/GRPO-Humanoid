@@ -43,86 +43,67 @@ class GRPOBuffer2:
         self.logprob_buf[self.ptr] = logprob
         self.ptr += 1
 
-    def get_similarity_advantage(self, observations, returns):
-        orig_shape = observations.shape  # (1024, 28, 300)
+    def get_similarity_advantage(self, observations):
+        orig_shape = observations.shape
+        observations_array = observations.view(-1, *self.obs_dim)
 
-        # Step 1: Reshape & Standardize Observations
-        observations_array = observations.reshape(-1, observations.shape[-1])  # (1024*28, 300)
+        # Convert to a single dataset (49,152 × num_features)
         states = observations_array.detach().numpy()
-        ret_buf = returns.detach().numpy()
         num_steps = orig_shape[0]
 
-        # Standardization
+        # Standardize data (HDBSCAN performs better on normalized data)
         scaler = StandardScaler()
         states_scaled = scaler.fit_transform(states)
 
-        # Apply PCA (keeping first 10 components)
-        pca_dim = 50
-        sigma = 1.0
-        pca = PCA(n_components=pca_dim)
+        # Reduce dimensionality using PCA (helps HDBSCAN perform better)
+        pca_dim = 10
+        pca = PCA(n_components=pca_dim)  # Reduce to 2D for visualization
         states_pca = pca.fit_transform(states_scaled)
 
-        # Reshape back to (1024, 28, pca_dim)
         states_pca = states_pca.reshape(orig_shape[0], orig_shape[1], pca_dim)
 
-        # Step 2: Compute Weighted Smoothed States
-        def weighted_average_advantages(returns_at_t, states_at_t, sigma=0.5):
-            """
-            Computes a weighted average of states at a given timestep across all trajectories.
-            """
-            num_trajectories = states_at_t.shape[0]
-            query_state = np.median(states_at_t, axis=0)  # Use median instead of mean
-            distances = np.linalg.norm(states_at_t - query_state, axis=1)
-
-            # Compute similarity weights
-            weights = np.exp(-distances ** 2 / (2 * sigma ** 2))
-            weights /= (np.sum(weights) + 1e-10)  # Normalize
-
-            # weights_rewards = weights * returns_at_t
-            average = np.dot(weights, returns_at_t)
-            # advantages = weights_rewards - average
-            advantages = returns_at_t - average
-            normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1E-10)
-
-            return normalized_advantages # Compute weighted average state
-
+        # ==============================
+        # Step 2: Compute Weighted Averaging for Smoothed States
+        # ==============================
         def weighted_average(states_at_t, sigma=0.5):
             """
             Computes a weighted average of states at a given timestep across all trajectories.
             """
             num_trajectories = states_at_t.shape[0]
-            query_state = np.median(states_at_t, axis=0)  # Use median instead of mean
+            query_state = np.mean(states_at_t, axis=0)  # Use mean state as the reference
             distances = np.linalg.norm(states_at_t - query_state, axis=1)
 
-            # Compute similarity weights
+            # Compute Gaussian similarity-based weights
             weights = np.exp(-distances ** 2 / (2 * sigma ** 2))
             weights /= (np.sum(weights) + 1e-10)  # Normalize
+            res = np.dot(weights, states_at_t)
 
-            return np.dot(weights, states_at_t)  # Compute weighted average state
+            return res  # Compute weighted average state
 
-        # # Compute smoothed states (averaged per timestep)
-        # smoothed_states = np.array([weighted_average(states_pca[t], sigma) for t in range(num_steps)])
-        #
-        # # Step 3: Compute Similarity-Based Advantages
-        # def compute_similarity_advantages(states, smoothed_states, sigma=0.5):
-        #     """
-        #     Computes similarity-based advantages by measuring distance from smoothed states.
-        #     """
-        #     smoothed_states_expanded = np.expand_dims(smoothed_states, axis=1)  # (1024, 1, 10)
-        #     distances = np.linalg.norm(states - smoothed_states_expanded, axis=2)  # (1024, 28)
-        #     advantages = np.exp(-distances ** 2 / (2 * sigma ** 2))  # Compute similarity scores
-        #
-        #     # Normalize advantages **per timestep**
-        #     mean = np.mean(advantages, axis=0, keepdims=True)
-        #     std = np.std(advantages, axis=0, keepdims=True) + 1e-8
-        #     return (advantages - mean) / std
-        #
-        # # Compute similarity-based advantages
-        # advantages = compute_similarity_advantages(states_pca, smoothed_states, sigma)
+        # Compute smoothed states (averaged over all trajectories per timestep)
+        smoothed_states = np.array([weighted_average(states_pca[t]) for t in range(num_steps)])
 
-        advantages = np.array([weighted_average_advantages(ret_buf[t], states_pca[t], sigma) for t in range(num_steps)])
+        # ==============================
+        # Step 3: Compute Similarity-Based Advantages
+        # ==============================
+        def compute_similarity_advantages(states, smoothed_states, sigma=0.5):
+            """
+            Computes similarity-based advantages by measuring the distance from smoothed states.
+            """
+            smoothed_states_expanded = np.expand_dims(smoothed_states, axis=1)
+            distances = np.linalg.norm(states - smoothed_states_expanded, axis=2)  # Now shape = (1024, 48)
+            advantages = np.exp(-distances ** 2 / (2 * sigma ** 2))  # Compute Gaussian similarity scores
 
-        return advantages  # Shape: (1024, 28)
+            # Normalize advantages to have zero mean and unit variance
+            return (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-8)
+
+        # Compute similarity-weighted advantages
+        advantages = compute_similarity_advantages(states_pca, smoothed_states)
+
+        # # Normalize advantages to zero mean and unit variance
+        # advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-8)
+
+        return advantages
 
     def get_cluster_assignments(self, observations, cluster_num):
         # Create Faiss KMeans model
@@ -227,7 +208,7 @@ class GRPOBuffer2:
                 # ret_buf[t] = last_ret
             ret_buf = adv_buf  # + self.val_buf
 
-            adv_array = self.get_similarity_advantage(self.obs_buf, ret_buf)
+            adv_array = self.get_similarity_advantage(self.obs_buf)
             adv_buf = torch.tensor(adv_array)
             # print(skipped_clusters)
             return adv_buf, ret_buf

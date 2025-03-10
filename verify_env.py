@@ -7,17 +7,14 @@ observation, info = env.reset()
 
 episode_over = False
 iteration = 0
-while not episode_over:
+while iteration < 200:
     action = env.action_space.sample()  # agent policy that uses the observation and info
     observation, reward, terminated, truncated, info = env.step(action)
     iteration += 1
     time.sleep(0.01)
-    print(f"iteration:{iteration}, action: {action.shape}, observation: {observation.shape}, reward: {reward}, terminated: {terminated}, truncated: {truncated}")
-
     episode_over = terminated or truncated
-    if episode_over:
-        env.reset(seed=1)
-        episode_over = False
+    print(f"iteration:{iteration}, action: {action.shape}, observation: {observation.shape}, reward: {reward}, terminated: {terminated}, truncated: {truncated}, over: {episode_over}")
 
 print(f'total iteration: {iteration}')
 env.close()
+

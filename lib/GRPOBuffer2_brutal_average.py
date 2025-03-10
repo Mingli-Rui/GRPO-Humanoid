@@ -1,11 +1,6 @@
 import torch
 from sklearn.cluster import KMeans
 import numpy as np
-import hdbscan
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-
 
 class GRPOBuffer2:
     """
@@ -43,125 +38,15 @@ class GRPOBuffer2:
         self.logprob_buf[self.ptr] = logprob
         self.ptr += 1
 
-    def get_similarity_advantage(self, observations, returns):
-        orig_shape = observations.shape  # (1024, 28, 300)
-
-        # Step 1: Reshape & Standardize Observations
-        observations_array = observations.reshape(-1, observations.shape[-1])  # (1024*28, 300)
-        states = observations_array.detach().numpy()
-        ret_buf = returns.detach().numpy()
-        num_steps = orig_shape[0]
-
-        # Standardization
-        scaler = StandardScaler()
-        states_scaled = scaler.fit_transform(states)
-
-        # Apply PCA (keeping first 10 components)
-        pca_dim = 50
-        sigma = 1.0
-        pca = PCA(n_components=pca_dim)
-        states_pca = pca.fit_transform(states_scaled)
-
-        # Reshape back to (1024, 28, pca_dim)
-        states_pca = states_pca.reshape(orig_shape[0], orig_shape[1], pca_dim)
-
-        # Step 2: Compute Weighted Smoothed States
-        def weighted_average_advantages(returns_at_t, states_at_t, sigma=0.5):
-            """
-            Computes a weighted average of states at a given timestep across all trajectories.
-            """
-            num_trajectories = states_at_t.shape[0]
-            query_state = np.median(states_at_t, axis=0)  # Use median instead of mean
-            distances = np.linalg.norm(states_at_t - query_state, axis=1)
-
-            # Compute similarity weights
-            weights = np.exp(-distances ** 2 / (2 * sigma ** 2))
-            weights /= (np.sum(weights) + 1e-10)  # Normalize
-
-            # weights_rewards = weights * returns_at_t
-            average = np.dot(weights, returns_at_t)
-            # advantages = weights_rewards - average
-            advantages = returns_at_t - average
-            normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1E-10)
-
-            return normalized_advantages # Compute weighted average state
-
-        def weighted_average(states_at_t, sigma=0.5):
-            """
-            Computes a weighted average of states at a given timestep across all trajectories.
-            """
-            num_trajectories = states_at_t.shape[0]
-            query_state = np.median(states_at_t, axis=0)  # Use median instead of mean
-            distances = np.linalg.norm(states_at_t - query_state, axis=1)
-
-            # Compute similarity weights
-            weights = np.exp(-distances ** 2 / (2 * sigma ** 2))
-            weights /= (np.sum(weights) + 1e-10)  # Normalize
-
-            return np.dot(weights, states_at_t)  # Compute weighted average state
-
-        # # Compute smoothed states (averaged per timestep)
-        # smoothed_states = np.array([weighted_average(states_pca[t], sigma) for t in range(num_steps)])
-        #
-        # # Step 3: Compute Similarity-Based Advantages
-        # def compute_similarity_advantages(states, smoothed_states, sigma=0.5):
-        #     """
-        #     Computes similarity-based advantages by measuring distance from smoothed states.
-        #     """
-        #     smoothed_states_expanded = np.expand_dims(smoothed_states, axis=1)  # (1024, 1, 10)
-        #     distances = np.linalg.norm(states - smoothed_states_expanded, axis=2)  # (1024, 28)
-        #     advantages = np.exp(-distances ** 2 / (2 * sigma ** 2))  # Compute similarity scores
-        #
-        #     # Normalize advantages **per timestep**
-        #     mean = np.mean(advantages, axis=0, keepdims=True)
-        #     std = np.std(advantages, axis=0, keepdims=True) + 1e-8
-        #     return (advantages - mean) / std
-        #
-        # # Compute similarity-based advantages
-        # advantages = compute_similarity_advantages(states_pca, smoothed_states, sigma)
-
-        advantages = np.array([weighted_average_advantages(ret_buf[t], states_pca[t], sigma) for t in range(num_steps)])
-
-        return advantages  # Shape: (1024, 28)
-
     def get_cluster_assignments(self, observations, cluster_num):
         # Create Faiss KMeans model
         orig_shape = observations.shape
         observations_array = observations.view(-1, *self.obs_dim)
         kmeans = KMeans(n_clusters=cluster_num, random_state=1, algorithm="elkan", n_init="auto", max_iter=100)
-        labels2 = kmeans.fit_predict(observations_array.detach().numpy())
-        labels2 = labels2.reshape(orig_shape[:-1])
-
-        # Convert to a single dataset (49,152 × num_features)
-        states = observations_array.detach().numpy()
-
-        # Standardize data (HDBSCAN performs better on normalized data)
-        scaler = StandardScaler()
-        states_scaled = scaler.fit_transform(states)
-
-        # Reduce dimensionality using PCA (helps HDBSCAN perform better)
-        pca = PCA(n_components=2)  # Reduce to 2D for visualization
-        states_pca = pca.fit_transform(states_scaled)
-
-        # Run HDBSCAN clustering
-        clusterer = hdbscan.HDBSCAN(min_cluster_size=20, min_samples=2)
-        # clusterer = hdbscan.HDBSCAN(min_cluster_size=100, min_samples=10)
-        labels = clusterer.fit_predict(states_pca)
-        num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        effective_count = (labels > -1).sum()
-        noise_count = (labels == -1).sum()
-        print(f"num_clusters: {num_clusters}, count + noise = total: {effective_count} + {noise_count} = {labels.shape[0]}")
-
-        # # Visualization of Clusters
-        # plt.figure(figsize=(10, 6))
-        # scatter = plt.scatter(states_pca[:, 0], states_pca[:, 1], c=labels, cmap='viridis', alpha=0.5, s=5)
-        # plt.colorbar(scatter, label="Cluster Label")
-        # plt.title("HDBSCAN Clustering of OpenAI Gym Humanoid States")
-        # plt.xlabel("PCA Component 1")
-        # plt.ylabel("PCA Component 2")
-        # plt.show()
+        labels = kmeans.fit_predict(observations_array.detach().numpy())
+        labels = labels.reshape(orig_shape[:-1])
         # centroids = kmeans.cluster_centers_
-        return labels, num_clusters
+        return labels
 
     def calculate_advantage2(self, returns, observations):
         """
@@ -175,7 +60,7 @@ class GRPOBuffer2:
         with torch.no_grad():
             cluster_num = observations.shape[0] // self.cluster_size
             print('cluster count:', cluster_num)
-            labels, cluster_num = self.get_cluster_assignments(observations, cluster_num)
+            labels = self.get_cluster_assignments(observations, cluster_num)
             new_advantages = np.zeros_like(returns, dtype=np.float32)
             for id in range(cluster_num):
                 cluster_ids = labels == id
@@ -227,8 +112,16 @@ class GRPOBuffer2:
                 # ret_buf[t] = last_ret
             ret_buf = adv_buf  # + self.val_buf
 
-            adv_array = self.get_similarity_advantage(self.obs_buf, ret_buf)
-            adv_buf = torch.tensor(adv_array)
+            adv_buf = torch.zeros_like(ret_buf, dtype=torch.float32)
+            decay_rate = 0.998
+            decay = 1.
+            for i in range(0, adv_buf.shape[0]):
+                decay *= decay_rate
+                step_ret = ret_buf[i]
+                step_adv = decay * (step_ret - torch.mean(step_ret)) / (torch.std(step_ret) + torch.finfo(torch.float32).eps)
+                adv_buf[i] = step_adv
+
+            adv_buf = torch.clamp(adv_buf, -4.0, 4.0)
             # print(skipped_clusters)
             return adv_buf, ret_buf
 

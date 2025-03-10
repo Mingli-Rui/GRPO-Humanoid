@@ -43,87 +43,6 @@ class GRPOBuffer2:
         self.logprob_buf[self.ptr] = logprob
         self.ptr += 1
 
-    def get_similarity_advantage(self, observations, returns):
-        orig_shape = observations.shape  # (1024, 28, 300)
-
-        # Step 1: Reshape & Standardize Observations
-        observations_array = observations.reshape(-1, observations.shape[-1])  # (1024*28, 300)
-        states = observations_array.detach().numpy()
-        ret_buf = returns.detach().numpy()
-        num_steps = orig_shape[0]
-
-        # Standardization
-        scaler = StandardScaler()
-        states_scaled = scaler.fit_transform(states)
-
-        # Apply PCA (keeping first 10 components)
-        pca_dim = 50
-        sigma = 1.0
-        pca = PCA(n_components=pca_dim)
-        states_pca = pca.fit_transform(states_scaled)
-
-        # Reshape back to (1024, 28, pca_dim)
-        states_pca = states_pca.reshape(orig_shape[0], orig_shape[1], pca_dim)
-
-        # Step 2: Compute Weighted Smoothed States
-        def weighted_average_advantages(returns_at_t, states_at_t, sigma=0.5):
-            """
-            Computes a weighted average of states at a given timestep across all trajectories.
-            """
-            num_trajectories = states_at_t.shape[0]
-            query_state = np.median(states_at_t, axis=0)  # Use median instead of mean
-            distances = np.linalg.norm(states_at_t - query_state, axis=1)
-
-            # Compute similarity weights
-            weights = np.exp(-distances ** 2 / (2 * sigma ** 2))
-            weights /= (np.sum(weights) + 1e-10)  # Normalize
-
-            # weights_rewards = weights * returns_at_t
-            average = np.dot(weights, returns_at_t)
-            # advantages = weights_rewards - average
-            advantages = returns_at_t - average
-            normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1E-10)
-
-            return normalized_advantages # Compute weighted average state
-
-        def weighted_average(states_at_t, sigma=0.5):
-            """
-            Computes a weighted average of states at a given timestep across all trajectories.
-            """
-            num_trajectories = states_at_t.shape[0]
-            query_state = np.median(states_at_t, axis=0)  # Use median instead of mean
-            distances = np.linalg.norm(states_at_t - query_state, axis=1)
-
-            # Compute similarity weights
-            weights = np.exp(-distances ** 2 / (2 * sigma ** 2))
-            weights /= (np.sum(weights) + 1e-10)  # Normalize
-
-            return np.dot(weights, states_at_t)  # Compute weighted average state
-
-        # # Compute smoothed states (averaged per timestep)
-        # smoothed_states = np.array([weighted_average(states_pca[t], sigma) for t in range(num_steps)])
-        #
-        # # Step 3: Compute Similarity-Based Advantages
-        # def compute_similarity_advantages(states, smoothed_states, sigma=0.5):
-        #     """
-        #     Computes similarity-based advantages by measuring distance from smoothed states.
-        #     """
-        #     smoothed_states_expanded = np.expand_dims(smoothed_states, axis=1)  # (1024, 1, 10)
-        #     distances = np.linalg.norm(states - smoothed_states_expanded, axis=2)  # (1024, 28)
-        #     advantages = np.exp(-distances ** 2 / (2 * sigma ** 2))  # Compute similarity scores
-        #
-        #     # Normalize advantages **per timestep**
-        #     mean = np.mean(advantages, axis=0, keepdims=True)
-        #     std = np.std(advantages, axis=0, keepdims=True) + 1e-8
-        #     return (advantages - mean) / std
-        #
-        # # Compute similarity-based advantages
-        # advantages = compute_similarity_advantages(states_pca, smoothed_states, sigma)
-
-        advantages = np.array([weighted_average_advantages(ret_buf[t], states_pca[t], sigma) for t in range(num_steps)])
-
-        return advantages  # Shape: (1024, 28)
-
     def get_cluster_assignments(self, observations, cluster_num):
         # Create Faiss KMeans model
         orig_shape = observations.shape
@@ -227,8 +146,42 @@ class GRPOBuffer2:
                 # ret_buf[t] = last_ret
             ret_buf = adv_buf  # + self.val_buf
 
-            adv_array = self.get_similarity_advantage(self.obs_buf, ret_buf)
-            adv_buf = torch.tensor(adv_array)
+            observations = self.obs_buf.view(-1, *self.obs_dim)
+            cluster_num = observations.shape[0] // self.cluster_size
+            labels, cluster_num = self.get_cluster_assignments(self.obs_buf, cluster_num)
+            # print(labels.shape, ret_buf.shape)
+
+            orig_shape = ret_buf.shape
+            adv_buf = torch.zeros_like(ret_buf, dtype=torch.float32)
+            new_advantages = adv_buf.view(-1)
+            labels = torch.tensor(labels, dtype=torch.float32).view(-1)
+            returns = ret_buf.view(-1)
+            skipped_clusters = []
+            for id in range(cluster_num):
+                cluster_ids = labels == id
+                reward_count = torch.sum(cluster_ids)
+                if reward_count >= self.min_cluster_size:
+                    cluster_reward = returns[labels == id]
+                    # print(f'{id}, {reward_count}, {cluster_reward.mean()}, {cluster_reward.std()}')
+                    this_advantage = torch.zeros_like(cluster_reward) if cluster_reward.numel() < 2 else (cluster_reward - torch.mean(cluster_reward)) / (torch.std(cluster_reward) + torch.finfo(torch.float32).eps)
+                    contains_nan = torch.isnan(this_advantage).any()
+                    if contains_nan:
+                        print(f'id: {id}, {contains_nan}:')
+                        print('data:', cluster_reward)
+                        print('mean', cluster_reward.mean())
+                        print('std', cluster_reward.std())
+                        print('adv', this_advantage)
+                    copy_idx = 0
+                    for target_idx in range(observations.shape[0]):
+                        if cluster_ids[target_idx]:
+                            new_advantages[target_idx] = this_advantage[copy_idx]
+                            copy_idx += 1
+                    # print(f'cluster: {id} , count: {reward_count}')
+                else:
+                    # if the actual group size, skip setting advantages.
+                    # The default value is 0. It should not affect the policy.
+                    skipped_clusters.append((id, reward_count))
+            adv_buf = torch.clamp(adv_buf, -2.0, 2.0)
             # print(skipped_clusters)
             return adv_buf, ret_buf
 

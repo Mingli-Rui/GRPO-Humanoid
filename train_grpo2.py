@@ -2,6 +2,7 @@ import argparse
 import datetime
 import os
 import time
+import random
 
 import cv2
 import gymnasium as gym
@@ -13,6 +14,13 @@ from tensorboardX import SummaryWriter
 
 from lib.GRPOAgent import GRPOAgent
 from lib.GRPOBuffer2 import GRPOBuffer2
+
+
+BETA_INIT = 0.05  # Initial KL penalty coefficient
+TARGET_KL = 0.003  # Desired KL divergence threshold
+BETA_ADJUST_RATE = 2.0  # Factor for adjusting beta
+MIN_BETA = 1e-2  # Prevents β from decreasing too much
+MAX_BETA = 1.    # Prevents β from becoming too large
 
 
 def log_video(env, agent, device, video_path, fps=30):
@@ -84,7 +92,18 @@ def parse_args():
     parser.add_argument("--reward-scale", type=float, default=0.005, help="Reward scaling")
     parser.add_argument("--render-epoch", type=int, default=50, help="Render every n-th epoch")
     parser.add_argument("--save-epoch", type=int, default=200, help="Save the model every n-th epoch")
+    parser.add_argument("--beta", type=float, default=1e-8, help="beta scale for KL penalty")
+    parser.add_argument("--min-group-size", type=int, default=10, help="Minimum group size")
+    parser.add_argument("--seed", type=int, default=1, help="seed")
+
     return parser.parse_args()
+
+
+def compute_kl_divergence(old_log_probs, new_log_probs):
+    """ Compute unbiased KL divergence estimator: (π_ref / π_theta) - log(π_ref / π_theta) - 1 """
+    ratio = torch.exp(old_log_probs - new_log_probs)  # Compute π_ref / π_theta
+    kl_div = (ratio - ratio.log() - 1).mean()  # Apply the unbiased estimator
+    return kl_div.item()
 
 
 if __name__ == "__main__":
@@ -94,7 +113,7 @@ if __name__ == "__main__":
     # TODO use cpu for simplicity.
     # if device_name != "cuda" and torch.backends.mps.is_available():
     #     device_name = 'mps'
-    print(f'train on device: {device_name}')
+    print(f'train on device: {device_name}, beta: {args.beta}, seed={args.seed}')
     device = torch.device(device_name)
 
     # Create the folders for logging
@@ -133,12 +152,19 @@ if __name__ == "__main__":
     # Create the buffer
     buffer = GRPOBuffer2(obs_dim, act_dim, args.n_steps, args.n_envs, device, args.gamma, args.gae_lambda)
 
+    # set seed except env
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    os.environ['PYTHONHASHSEED'] = str(args.seed)
+    torch.manual_seed(args.seed)
+
     # Start the training
     global_step_idx = 0
     start_time = time.time()
-    next_obs = torch.tensor(np.array(envs.reset()[0], dtype=np.float32), device=device)
+    next_obs = torch.tensor(np.array(envs.reset(seed=args.seed)[0], dtype=np.float32), device=device)
     next_terminateds = torch.tensor([float(False)] * args.n_envs, device=device)
     next_truncateds = torch.tensor([float(False)] * args.n_envs, device=device)
+    beta = args.beta
 
     reward_list = []
 
@@ -202,6 +228,7 @@ if __name__ == "__main__":
             sum_loss_value = 0.0
             sum_entropy = 0.0
             sum_loss_total = 0.0
+            policy_loss, kl_div, entropy = .0, .0, .0
             for _ in range(args.train_iters):
                 # Shuffle the indices
                 np.random.shuffle(traj_indices)
@@ -238,8 +265,22 @@ if __name__ == "__main__":
                     # Calculate the entropy loss
                     entropy = entropies.mean()
 
+                    # # Compute KL divergence between original and current policy/model
+                    # logits_orig = original_model(states)  # Original model's logits
+                    # logits_current = current_model(states)  # Current model's logits
+                    #
+                    # probs_orig = F.softmax(logits_orig, dim=-1)
+                    # log_probs_orig = F.log_softmax(logits_orig, dim=-1)
+                    # log_probs_current = F.log_softmax(logits_current, dim=-1)
+                    #
+                    # orig_logprobs = traj_logprob[batch_indices]
+                    # kl_div = compute_kl_divergence(orig_logprobs, new_logprobs)
+                    kl_div = 0
+
                     # Calculate the total loss
                     # loss = policy_loss + args.vf_coef * value_loss - args.ent_coef * entropy
+                    # print(f"policy_loss: {policy_loss}, kl_penalty: {kl_div}, {beta * kl_div}, entropy: {entropy} {args.ent_coef * entropy}")
+                    # loss = policy_loss + beta * kl_div - args.ent_coef * entropy
                     loss = policy_loss - args.ent_coef * entropy
 
                     # Optimize the model
@@ -252,6 +293,23 @@ if __name__ == "__main__":
                     # sum_loss_value += value_loss.item()
                     sum_entropy += entropy.item()
                     sum_loss_total += loss.item()
+
+                # Adjust Beta dynamically based on KL divergence after one batch because inside the batch, the first will be always 0.
+                # old_beta = beta
+                # if kl_div > 2.5 * TARGET_KL:
+                #     print(
+                #         f"policy_loss: {policy_loss}, kl_penalty: {beta} * {kl_div} = {beta * kl_div}, entropy: {entropy} {args.ent_coef * entropy}")
+                #     beta = max(beta / BETA_ADJUST_RATE, MIN_BETA)  # Decrease β to allow more update freedom
+                # elif kl_div < 0.33 * TARGET_KL:
+                #     print(
+                #         f"policy_loss: {policy_loss}, kl_penalty: {beta} * {kl_div} = {beta * kl_div}, entropy: {entropy} {args.ent_coef * entropy}")
+                #     beta = min(beta * BETA_ADJUST_RATE,
+                #                MAX_BETA)  # Increase β to restrict updates and stabilize learning
+                # if old_beta != beta:
+                #     print(f'adjust beta: {old_beta} -> {beta}')
+
+            # print once
+            # print(f"policy_loss: {policy_loss}, kl_penalty: {beta} * {kl_div} = {beta * kl_div}, entropy: {entropy} {args.ent_coef * entropy}")
 
             # Update the learning rate
             scheduler.step()

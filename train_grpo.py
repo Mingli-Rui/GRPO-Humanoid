@@ -222,7 +222,7 @@ if __name__ == "__main__":
                     mj_data.qpos[:] = saved_state["qpos"]
                     mj_data.qvel[:] = saved_state["qvel"]
 
-                    # ✅ Ensure physics updates (Corrected)
+                    # Ensure physics updates (Corrected)
                     mujoco.mj_forward(env_instance.model, mj_data)  # Correct function
 
                 # Collect trajectories
