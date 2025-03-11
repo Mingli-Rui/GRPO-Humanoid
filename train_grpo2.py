@@ -23,7 +23,8 @@ MIN_BETA = 1e-2  # Prevents β from decreasing too much
 MAX_BETA = 1.    # Prevents β from becoming too large
 
 
-def log_video(env, agent, device, video_path, fps=30):
+
+def log_video(env, agent, device, video_path, seed, fps=30):
     """
     Log a video of one episode of the agent playing in the environment.
     :param env: a test environment which supports video recording and doesn't conflict with the other environments.
@@ -32,19 +33,30 @@ def log_video(env, agent, device, video_path, fps=30):
     :param video_path: the path to save the video.
     :param fps: the frames per second of the video.
     """
-    frames = []
-    obs, _ = env.reset()
-    done = False
-    while not done:
-        # Render the frame
-        frames.append(env.render())
-        # Sample an action
-        with torch.no_grad():
-            action, _, _, _ = agent.get_action_and_value(
-                torch.tensor(np.array([obs], dtype=np.float32), device=device))
-        # Step the environment
-        obs, _, terminated, _, _ = env.step(action.squeeze(0).cpu().numpy())
-        done = terminated
+    # try 5 times, save the longest one
+    longest_frames = []
+    frames_lens = []
+    max_try = 5
+    for _ in range(max_try):
+        frames = []
+        obs, _ = env.reset(seed=seed)
+        done = False
+        while not done:
+            # Render the frame
+            frames.append(env.render())
+            # Sample an action
+            with torch.no_grad():
+                action, _, _, _ = agent.get_action_and_value(
+                    torch.tensor(np.array([obs], dtype=np.float32), device=device))
+            # Step the environment
+            obs, _, terminated, _, _ = env.step(action.squeeze(0).cpu().numpy())
+            done = terminated
+        frames_lens.append(len(frames))
+        if len(frames) > len(longest_frames):
+            longest_frames = frames
+    frames = longest_frames
+    print('trajectories length:', frames_lens)
+
     # Save the video
     out = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frames[0].shape[1], frames[0].shape[0]))
     for frame in frames:
@@ -165,17 +177,28 @@ if __name__ == "__main__":
     next_terminateds = torch.tensor([float(False)] * args.n_envs, device=device)
     next_truncateds = torch.tensor([float(False)] * args.n_envs, device=device)
     beta = args.beta
+    # 1.0 means done, 0 means not done
+    done_flags = np.zeros(args.n_envs, dtype=bool)  # Track finished environments
 
     reward_list = []
 
     try:
         for epoch in range(1, args.n_epochs + 1):
+            longest_traj = 0
+            total_steps = 0
+            traj_count = 1
+            traj_len = 0
+            max_done = 40
             # Collect trajectories
             for step_idx in range(0, args.n_steps):
                 global_step_idx += args.n_envs
                 obs = next_obs
-                terminateds = next_terminateds
-                truncateds = next_truncateds
+                # terminateds = next_terminateds
+                # truncateds = next_truncateds
+                # TODO use done_flags
+                done_flags_tensor = torch.tensor(done_flags, device=device)
+                terminateds = done_flags_tensor
+                truncateds = done_flags_tensor
 
                 # Sample the actions
                 with torch.no_grad():
@@ -184,6 +207,8 @@ if __name__ == "__main__":
 
                 # Step the environment
                 next_obs, rewards, next_terminateds, next_truncateds, _ = envs.step(actions.cpu().numpy())
+                done_flags |= next_terminateds
+                done_flags |= next_truncateds
 
                 # # TODO: debugging
                 # if next_terminateds.sum() > 0.5 or next_truncateds.sum() > 0.5:
@@ -196,9 +221,27 @@ if __name__ == "__main__":
                 next_terminateds = torch.tensor([float(term) for term in next_terminateds], device=device)
                 next_truncateds = torch.tensor([float(trunc) for trunc in next_truncateds], device=device)
 
+                done_count = done_flags.sum()
+                last_step = done_count > max_done
+                if last_step:
+                    # TODO: reward hacking. double rewards
+                    rewards = rewards * 2
+                    next_truncateds = torch.tensor([float(True) for trunc in next_truncateds], device=device)
+
                 # Store the step in the buffer
                 # buffer.store(obs, actions, rewards, values, terminateds, truncateds, logprobs)
-                buffer.store(obs, actions, rewards, None, terminateds, truncateds, logprobs)
+                buffer.store(obs, actions, rewards, None, terminateds, truncateds, logprobs, done_flags)
+
+                traj_len += 1
+                total_steps += (args.n_envs - done_count)
+                # Force sync: Reset all environments together only when all are done
+                if last_step:
+                    # print(f'early stop sync: {done_count} / {args.n_envs}')
+                    obs, _ = envs.reset(seed=args.seed)
+                    done_flags[:] = False  # Reset flags
+                    longest_traj = max(longest_traj, traj_len)
+                    traj_len = 0
+                    traj_count += 1
 
             # After the trajectories are collected, calculate the advantages and returns
             with torch.no_grad():
@@ -319,12 +362,12 @@ if __name__ == "__main__":
             # Rescale the rewards
             avg_reward /= args.reward_scale
             print(f"Epoch {epoch} done in {time.time() - start_time:.2f}s. "
-                  f"Avg reward: {avg_reward:.2f}. ")
+                  f"Avg reward: {avg_reward:.2f}. Longest: {longest_traj}, average steps: {total_steps // traj_count // args.n_envs}")
             reward_list = []
 
             # Every n epochs, log the video
             if epoch % args.render_epoch == 0:
-                log_video(test_env, agent, device, os.path.join(videos_dir, f"epoch_{epoch}.mp4"))
+                log_video(test_env, agent, device, os.path.join(videos_dir, f"epoch_{epoch}.mp4"), args.seed)
 
             # Every n epochs, save the model
             if epoch % args.save_epoch == 0:
