@@ -61,6 +61,12 @@ To get started with this project, follow these steps:
     tensorboard --logdir "logs"
     ```
 
+7. **Render videos for a model**:
+   You can render videos from the trained model.
+    ```bash
+    python render.py --run-name 'render' --model checkpoints/2025-03-10_21-35-16_run_sim/model.dat --number 100 --seed 3
+    ```
+
 ---
 
 ## Description
