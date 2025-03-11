@@ -1,8 +1,10 @@
 import torch
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 
-class GRPOBuffer3:
+class GRPOBuffer2:
     """
     Buffer for storing trajectories
     """
@@ -41,9 +43,15 @@ class GRPOBuffer3:
     def get_cluster_assignments(self, observations, cluster_num):
         # Create Faiss KMeans model
         orig_shape = observations.shape
-        observations_array = observations.view(-1, *self.obs_dim)
+        observations_array = observations.view(-1, *self.obs_dim).detach().numpy()
+
+        # Apply PCA (keeping first 10 components)
+        pca_dim = 50
+        pca = PCA(n_components=pca_dim)
+        observations_array = pca.fit_transform(observations_array)
+
         kmeans = KMeans(n_clusters=cluster_num, random_state=1, algorithm="elkan", n_init="auto", max_iter=100)
-        labels = kmeans.fit_predict(observations_array.detach().numpy())
+        labels = kmeans.fit_predict(observations_array)
         labels = labels.reshape(orig_shape[:-1])
         # centroids = kmeans.cluster_centers_
         return labels

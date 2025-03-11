@@ -67,11 +67,18 @@ To get started with this project, follow these steps:
     python render.py --run-name 'render' --model checkpoints/2025-03-10_21-35-16_run_sim/model.dat --number 100 --seed 1
     ```
 
-8. **Train a model with weighted average reward based on similarity.**
+8. **Train a model with weighted average reward based on similarity:**
    We implemented an algorithm to compute weighted average reward.
     ```bash
     python train_similarity.py --run-name "run_sim" --seed 1
     ```
+
+9. **Train a model with GRPO based on KMean clustering:**
+   We implemented GRPO based on KMean.
+    ```bash
+    python train_grpo_kmean.py --run-name "run_kmean" --seed 1
+    ```
+
 
 ---
 
