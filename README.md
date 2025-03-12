@@ -10,19 +10,23 @@ learning.
 
 ![PPO Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
 
+Here is a demonstration of the agent's performance after training for 3000 epochs on the Humanoid-v4 environment.
+
+## Results of GRPO with KMean cluster
+
+![GRPO with KMean Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
+
+## Results of GRPO with Similarity
+
+![GRPO with Similarity Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
 
 ## Results of GRPO with KMean cluster
 
 ![GRPO with KMean Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/tree/m3/docs/demo_kmean.gif)
 
-Here is a demonstration of the agent's performance after training for 3000 epochs on the Humanoid-v4 environment.
-
-## Results of GRPO with KMean cluster
+## Results of GRPO with Similarity
 
 ![GRPO with Similarity Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/tree/m3/docs/demo_sim.gif)
-
-Here is a demonstration of the agent's performance after training for 3000 epochs on the Humanoid-v4 environment.
-
 ---
 
 ## Installation
