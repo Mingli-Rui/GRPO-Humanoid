@@ -14,11 +14,11 @@ Here is a demonstration of the agent's performance after training for 3000 epoch
 
 ## Results of GRPO with KMean cluster
 
-![GRPO with KMean Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
+![GRPO with KMean Demo Gif](https://www.youtube.com/shorts/pGOiNQByCzY)
 
 ## Results of GRPO with Similarity
 
-![GRPO with Similarity Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
+![GRPO with Similarity Demo Gif](https://www.youtube.com/shorts/M1l95Pdd4BU)
 
 ## Results of GRPO with KMean cluster
 
