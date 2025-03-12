@@ -43,7 +43,7 @@ class GRPOBuffer2:
     def get_cluster_assignments(self, observations, cluster_num):
         # Create Faiss KMeans model
         orig_shape = observations.shape
-        observations_array = observations.view(-1, *self.obs_dim).detach().numpy()
+        observations_array = observations.view(-1, *self.obs_dim).cpu().detach().numpy()
 
         # Apply PCA (keeping first 10 components)
         pca_dim = 50

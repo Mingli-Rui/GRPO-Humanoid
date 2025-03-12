@@ -122,8 +122,8 @@ if __name__ == "__main__":
     # Support Mac mps
     device_name = "cuda" if args.cuda and torch.cuda.is_available() else "cpu"
     # TODO use cpu for simplicity.
-    # if device_name != "cuda" and torch.backends.mps.is_available():
-    #     device_name = 'mps'
+    if device_name != "cuda" and torch.backends.mps.is_available():
+        device_name = 'mps'
     print(f'train on device: {device_name}, beta: {args.beta}, seed={args.seed}')
     device = torch.device(device_name)
 
