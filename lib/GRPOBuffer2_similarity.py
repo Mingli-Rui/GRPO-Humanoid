@@ -27,6 +27,7 @@ class GRPOBuffer2:
         self.done_flags = np.zeros((size, num_envs), dtype=bool)
         self.gamma, self.gae_lambda = gamma, gae_lambda
         self.ptr = 0
+        self.device = device
         self.cluster_size = 64
         self.min_cluster_size = 3
 
@@ -54,8 +55,8 @@ class GRPOBuffer2:
 
         # Step 1: Reshape & Standardize Observations
         observations_array = observations.reshape(-1, observations.shape[-1])  # (1024*28, 300)
-        states = observations_array.detach().numpy()
-        ret_buf = returns.detach().numpy()
+        states = observations_array.cpu().detach().numpy()
+        ret_buf = returns.cpu().detach().numpy()
         num_steps = orig_shape[0]
 
         # Standardization
@@ -226,10 +227,10 @@ class GRPOBuffer2:
         """
         # Check if the Buffer is full
         assert self.ptr == self.capacity, "Buffer not full"
-        last_vals = torch.zeros_like(self.val_buf[0])
+        last_vals = torch.zeros_like(self.val_buf[0], device=self.device)
         # Calculate the advantages
         with torch.no_grad():
-            adv_buf = torch.zeros_like(self.rew_buf)
+            adv_buf = torch.zeros_like(self.rew_buf, device=self.device)
             # ret_buf = torch.zeros_like(self.rew_buf)
             last_gae = 0.0
             last_ret = 0.0
@@ -251,7 +252,7 @@ class GRPOBuffer2:
             ret_buf = adv_buf  # + self.val_buf
 
             adv_array = self.get_similarity_advantage(self.obs_buf, ret_buf, self.done_flags)
-            adv_buf = torch.tensor(adv_array)
+            adv_buf = torch.tensor(adv_array, device=self.device)
             # print(skipped_clusters)
             return adv_buf, ret_buf
 
