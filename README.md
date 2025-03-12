@@ -7,30 +7,20 @@ learning.
 ---
 
 ## Results of PPO (baseline)
-
 ![PPO Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
+
+## Results of GRPO with KMean cluster
+![GRPO with KMean Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_kmean.gif)
+
+## Results of GRPO with Similarity
+![GRPO with Similarity Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_sim.gif)
+
+## Demos on Youtube
+[![GRPO with KMean Demo Youtube](https://img.youtube.com/vi/pGOiNQByCzY/0.jpg)](https://www.youtube.com/watch?v=pGOiNQByCzY)
+[![GRPO with Similarity Demo Youtube](https://img.youtube.com/vi/M1l95Pdd4BU/0.jpg)](https://www.youtube.com/watch?v=M1l95Pdd4BU)
 
 Here is a demonstration of the agent's performance after training for 3000 epochs on the Humanoid-v4 environment.
 
-## Results of GRPO with KMean cluster
-
-![GRPO with KMean Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_kmean.gif)
-
-[![GRPO with KMean Demo Youtube](https://img.youtube.com/vi/pGOiNQByCzY/0.jpg)](https://www.youtube.com/watch?v=pGOiNQByCzY)
-
-## Results of GRPO with Similarity
-
-![GRPO with Similarity Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_sim.gif)
-
-[![GRPO with Similarity Demo Youtube](https://img.youtube.com/vi/M1l95Pdd4BU/0.jpg)](https://www.youtube.com/watch?v=M1l95Pdd4BU)
-
-## Results of GRPO with KMean cluster
-
-![GRPO with KMean Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/tree/m3/docs/demo_kmean.gif)
-
-## Results of GRPO with Similarity
-
-![GRPO with Similarity Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/tree/m3/docs/demo_sim.gif)
 ---
 
 ## Installation
