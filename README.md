@@ -16,9 +16,13 @@ Here is a demonstration of the agent's performance after training for 3000 epoch
 
 ![GRPO with KMean Demo Gif](https://www.youtube.com/shorts/pGOiNQByCzY)
 
+[![GRPO with KMean Demo Youtube](https://img.youtube.com/vi/pGOiNQByCzY/0.jpg)](https://www.youtube.com/watch?v=pGOiNQByCzY)
+
 ## Results of GRPO with Similarity
 
 ![GRPO with Similarity Demo Gif](https://www.youtube.com/shorts/M1l95Pdd4BU)
+
+[![GRPO with Similarity Demo Youtube](https://img.youtube.com/vi/M1l95Pdd4BU/0.jpg)](https://www.youtube.com/watch?v=M1l95Pdd4BU)
 
 ## Results of GRPO with KMean cluster
 
