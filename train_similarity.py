@@ -16,13 +16,6 @@ from lib.GRPOAgent import GRPOAgent
 from lib.GRPOBuffer2_similarity import GRPOBuffer2
 
 
-BETA_INIT = 0.05  # Initial KL penalty coefficient
-TARGET_KL = 0.003  # Desired KL divergence threshold
-BETA_ADJUST_RATE = 2.0  # Factor for adjusting beta
-MIN_BETA = 1e-2  # Prevents β from decreasing too much
-MAX_BETA = 1.    # Prevents β from becoming too large
-
-
 def log_video(env, agent, device, video_path, seed, fps=30):
     """
     Log a video of one episode of the agent playing in the environment.
@@ -106,6 +99,7 @@ def parse_args():
     parser.add_argument("--beta", type=float, default=1e-8, help="beta scale for KL penalty")
     parser.add_argument("--min-group-size", type=int, default=10, help="Minimum group size")
     parser.add_argument("--seed", type=int, default=1, help="seed")
+    parser.add_argument("--sigma", type=float, default=1.0, help="Temperature (sigma) for similarity computation")
 
     return parser.parse_args()
 
@@ -117,19 +111,26 @@ def compute_kl_divergence(old_log_probs, new_log_probs):
     return kl_div.item()
 
 
+def get_device(args):
+    device_name = 'cpu'
+    if args.cuda and torch.cuda.is_available():
+        device_name = 'cuda'
+    elif args.mps and torch.backends.mps.is_available():
+        device_name = 'mps'
+    else:
+        device_name = 'cpu'
+    print(f'train on device: {device_name}')
+    return torch.device(device_name)
+
+
 if __name__ == "__main__":
     args = parse_args()
     # Support Mac mps
-    device_name = "cuda" if args.cuda and torch.cuda.is_available() else "cpu"
-    # TODO use cpu for simplicity.
-    # if device_name != "cuda" and torch.backends.mps.is_available():
-    #     device_name = 'mps'
-    print(f'train on device: {device_name}, beta: {args.beta}, seed={args.seed}')
-    device = torch.device(device_name)
+    device = get_device(args)
 
     # Create the folders for logging
     current_dir = os.path.dirname(__file__)
-    folder_name = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{args.run_name}"
+    folder_name = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{args.run_name}_{args.sigma}"
     videos_dir = os.path.join(current_dir, "videos", folder_name)
     os.makedirs(videos_dir, exist_ok=True)
     checkpoint_dir = os.path.join(current_dir, "checkpoints", folder_name)
@@ -307,10 +308,6 @@ if __name__ == "__main__":
                     # Calculate the entropy loss
                     entropy = entropies.mean()
 
-                    # # Compute KL divergence between original and current policy/model
-                    # logits_orig = original_model(states)  # Original model's logits
-                    # logits_current = current_model(states)  # Current model's logits
-                    #
                     # probs_orig = F.softmax(logits_orig, dim=-1)
                     # log_probs_orig = F.log_softmax(logits_orig, dim=-1)
                     # log_probs_current = F.log_softmax(logits_current, dim=-1)

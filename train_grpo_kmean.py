@@ -117,15 +117,22 @@ def compute_kl_divergence(old_log_probs, new_log_probs):
     return kl_div.item()
 
 
+def get_device(args):
+    device_name = 'cpu'
+    if args.cuda and torch.cuda.is_available():
+        device_name = 'cuda'
+    elif args.mps and torch.backends.mps.is_available():
+        device_name = 'mps'
+    else:
+        device_name = 'cpu'
+    print(f'train on device: {device_name}')
+    return torch.device(device_name)
+
+
 if __name__ == "__main__":
     args = parse_args()
     # Support Mac mps
-    device_name = "cuda" if args.cuda and torch.cuda.is_available() else "cpu"
-    # TODO use cpu for simplicity.
-    if device_name != "cuda" and torch.backends.mps.is_available():
-        device_name = 'mps'
-    print(f'train on device: {device_name}, beta: {args.beta}, seed={args.seed}')
-    device = torch.device(device_name)
+    device = get_device(args)
 
     # Create the folders for logging
     current_dir = os.path.dirname(__file__)
@@ -158,7 +165,7 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.learning_rate_decay)
     print(agent.actor_mu)
     print(agent.actor_logstd)
-    # print(agent.critic)
+    # print(agent.critic)  # There is no critic network for GRPO
 
     # Create the buffer
     buffer = GRPOBuffer2(obs_dim, act_dim, args.n_steps, args.n_envs, device, args.gamma, args.gae_lambda)

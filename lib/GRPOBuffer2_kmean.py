@@ -56,35 +56,6 @@ class GRPOBuffer2:
         # centroids = kmeans.cluster_centers_
         return labels
 
-    def calculate_advantage2(self, returns, observations):
-        """
-        Calculates the advantage for each of the observations
-        Args:
-            returns: np.array of shape [batch size]
-            observations: np.array of shape [batch size, dim(observation space)]
-        Returns:
-            advantages: np.array of shape [batch size]
-        """
-        with torch.no_grad():
-            cluster_num = observations.shape[0] // self.cluster_size
-            print('cluster count:', cluster_num)
-            labels = self.get_cluster_assignments(observations, cluster_num)
-            new_advantages = np.zeros_like(returns, dtype=np.float32)
-            for id in range(cluster_num):
-                cluster_ids = labels == id
-                # reward_count = cluster_ids.sum()
-                cluster_reward = returns[labels == id]
-                # print(f'{id}, {reward_count}, {cluster_reward.mean()}, {cluster_reward.std()}')
-                this_advantage = (cluster_reward - cluster_reward.mean()) / (cluster_reward.std() + np.finfo(float).eps)
-                copy_idx = 0
-                for target_idx in range(observations.shape[0]):
-                    if cluster_ids[target_idx]:
-                        new_advantages[target_idx] = this_advantage[copy_idx]
-                        copy_idx += 1
-                # print(f'cluster: {id} , count: {reward_count}')
-
-            return new_advantages
-
     def calculate_advantages(self, last_terminateds, last_truncateds):
         """
         Calculate advantages using Generalized Advantage Estimation (GAE).
