@@ -1,14 +1,24 @@
-# PPO-Humanoid
+# GRPO-Humanoid
 
-This repository contains the implementation of a Proximal Policy Optimization (PPO) agent to control a humanoid in the
-OpenAI Gymnasium Mujoco environment. The agent is trained to master complex humanoid locomotion using deep reinforcement
-learning.
+This repository contains the implementation of a Group Relative Policy Optimization (GRPO) agent to control a humanoid in the
+OpenAI Gymnasium Mujoco environment.
+
+This repository is forked from https://github.com/ProfessorNova/PPO-Humanoid which is an implementation of PPO. And it is used as baseline.
 
 ---
 
-## Results
+## Results of PPO (baseline)
+![PPO Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
 
-![Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
+## Results of GRPO with KMean cluster
+![GRPO with KMean Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_kmean.gif)
+
+## Results of GRPO with Similarity
+![GRPO with Similarity Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_sim.gif)
+
+## Demos on Youtube
+[![GRPO with KMean Demo Youtube](https://img.youtube.com/vi/pGOiNQByCzY/0.jpg)](https://www.youtube.com/watch?v=pGOiNQByCzY)
+[![GRPO with Similarity Demo Youtube](https://img.youtube.com/vi/M1l95Pdd4BU/0.jpg)](https://www.youtube.com/watch?v=M1l95Pdd4BU)
 
 Here is a demonstration of the agent's performance after training for 3000 epochs on the Humanoid-v4 environment.
 
@@ -20,8 +30,8 @@ To get started with this project, follow these steps:
 
 1. **Clone the Repository**:
     ```bash
-    git clone https://github.com/ProfessorNova/PPO-Humanoid.git
-    cd PPO-Humanoid
+    git clone https://github.com/Mingli-Rui/GRPO-Humanoid.git
+    cd GRPO-Humanoid
     ```
 
 2. **Set Up Python Environment**:
@@ -44,21 +54,39 @@ To get started with this project, follow these steps:
     pip install "gymnasium[mujoco]"
     ```
 
-5. **Train the Model**:
+5. **Train the Model (Baseline)**:
    To start training the model, run:
     ```bash
-    python train.py --run-name "my_run"
+    python train.py --run-name "my_ppo"
     ```
    To train using a GPU, add the `--cuda` flag:
     ```bash
-    python train.py --run-name "my_run" --cuda
+    python train.py --run-name "my_ppo" --cuda
     ```
 
-6. **Monitor Training Progress**:
+6. **Train a model with GRPO based on KMean clustering:**
+   We implemented GRPO based on KMean.
+    ```bash
+    python train_grpo_kmean.py --run-name "run_kmean" --seed 1
+    ```
+
+7. **Train a model GRPO with weighted average reward based on similarity:**
+   We implemented an algorithm to compute weighted average reward.
+    ```bash
+    python train_similarity.py --run-name "run_sim" --seed 1
+    ```
+
+8. **Monitor Training Progress**:
    You can monitor the training progress by viewing the videos in the `videos` folder or by looking at the graphs in
    TensorBoard:
     ```bash
     tensorboard --logdir "logs"
+    ```
+
+9. **Render videos for a model**:
+   You can render videos from the trained model.
+    ```bash
+    python render.py --run-name 'render' --model checkpoints/2025-03-10_21-35-16_run_sim/model.dat --number 100 --seed 1
     ```
 
 ---

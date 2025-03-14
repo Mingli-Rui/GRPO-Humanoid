@@ -91,8 +91,8 @@ if __name__ == "__main__":
     args = parse_args()
     # Support Mac mps
     device_name = "cuda" if args.cuda and torch.cuda.is_available() else "cpu"
-    if device_name != "cuda" and torch.backends.mps.is_available():
-        device_name = 'mps'
+    # if device_name != "cuda" and torch.backends.mps.is_available():
+    #     device_name = 'mps'
     print(f'train on device: {device_name}')
     device = torch.device(device_name)
 
@@ -156,10 +156,10 @@ if __name__ == "__main__":
                 # Step the environment
                 next_obs, rewards, next_terminateds, next_truncateds, _ = envs.step(actions.cpu().numpy())
 
-                # TODO: debugging
-                if next_terminateds.sum() > 0.5 or next_truncateds.sum() > 0.5:
-                    # some trajectory are truncated or terminated.
-                    print(f'step: {step_idx}, {next_terminateds.sum()}, {next_truncateds.sum()}')
+                # # TODO: debugging
+                # if next_terminateds.sum() > 0.5 or next_truncateds.sum() > 0.5:
+                #     # some trajectory are truncated or terminated.
+                #     print(f'step: {step_idx}, {next_terminateds.sum()}, {next_truncateds.sum()}')
                 # parse everything to tensors
                 next_obs = torch.tensor(np.array(next_obs, dtype=np.float32), device=device)
                 reward_list.extend(rewards)
@@ -230,6 +230,7 @@ if __name__ == "__main__":
 
                     # Calculate the total loss
                     loss = policy_loss + args.vf_coef * value_loss - args.ent_coef * entropy
+                    print(f"policy_loss: {policy_loss}, value_loss: {value_loss}, {args.vf_coef * value_loss}, entropy: {entropy} {args.ent_coef * entropy}")
 
                     # Optimize the model
                     optimizer.zero_grad()
