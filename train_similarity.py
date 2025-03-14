@@ -99,7 +99,9 @@ def parse_args():
     parser.add_argument("--beta", type=float, default=1e-8, help="beta scale for KL penalty")
     parser.add_argument("--min-group-size", type=int, default=10, help="Minimum group size")
     parser.add_argument("--seed", type=int, default=1, help="seed")
+    parser.add_argument("--mps", default=False, action='store_true', help="Enable Apple Mac MPS")
     parser.add_argument("--sigma", type=float, default=1.0, help="Temperature (sigma) for similarity computation")
+    parser.add_argument("--ref", default="median", help="Environment to use")
 
     return parser.parse_args()
 
@@ -112,7 +114,7 @@ def compute_kl_divergence(old_log_probs, new_log_probs):
 
 
 def get_device(args):
-    device_name = 'cpu'
+    # device_name = 'cpu'
     if args.cuda and torch.cuda.is_available():
         device_name = 'cuda'
     elif args.mps and torch.backends.mps.is_available():
@@ -125,12 +127,14 @@ def get_device(args):
 
 if __name__ == "__main__":
     args = parse_args()
+    assert args.ref in {'median', 'average', 'max_reward'}
     # Support Mac mps
     device = get_device(args)
+    print(f'train similarity with : {args.ref}, {args.sigma}')
 
     # Create the folders for logging
     current_dir = os.path.dirname(__file__)
-    folder_name = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{args.run_name}_{args.sigma}"
+    folder_name = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{args.run_name}_{args.sigma}_{args.ref}"
     videos_dir = os.path.join(current_dir, "videos", folder_name)
     os.makedirs(videos_dir, exist_ok=True)
     checkpoint_dir = os.path.join(current_dir, "checkpoints", folder_name)
@@ -162,7 +166,7 @@ if __name__ == "__main__":
     # print(agent.critic)
 
     # Create the buffer
-    buffer = GRPOBuffer2(obs_dim, act_dim, args.n_steps, args.n_envs, device, args.gamma, args.gae_lambda)
+    buffer = GRPOBuffer2(obs_dim, act_dim, args.n_steps, args.n_envs, device, args.ref, args.sigma, args.gamma, args.gae_lambda)
 
     # set seed except env
     random.seed(args.seed)
@@ -188,7 +192,7 @@ if __name__ == "__main__":
             total_steps = 0
             traj_count = 1
             traj_len = 0
-            max_done = 40
+            max_done = min(args.n_envs - 3, int(args.n_envs * 0.9))
             # Collect trajectories
             for step_idx in range(0, args.n_steps):
                 global_step_idx += args.n_envs
@@ -358,7 +362,7 @@ if __name__ == "__main__":
             # Rescale the rewards
             avg_reward /= args.reward_scale
             print(f"Epoch {epoch} done in {time.time() - start_time:.2f}s. "
-                  f"Avg reward: {avg_reward:.2f}. Longest: {longest_traj}, average steps: {total_steps // traj_count // args.n_envs}")
+                  f"Avg reward: {avg_reward:.2f}. Longest: {longest_traj}, average steps: {total_steps // traj_count // args.n_envs}", flush=True)
             reward_list = []
 
             # Every n epochs, log the video

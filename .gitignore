@@ -1,7 +1,11 @@
 checkpoints
 logs
 videos
+checkpoints_old
+logs_old
+videos_old
 .DS_Store
 lib/__pycache__/
 .idea
 baseline
+*.out

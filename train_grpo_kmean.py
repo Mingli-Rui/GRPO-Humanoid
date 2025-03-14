@@ -106,6 +106,7 @@ def parse_args():
     parser.add_argument("--beta", type=float, default=1e-8, help="beta scale for KL penalty")
     parser.add_argument("--min-group-size", type=int, default=10, help="Minimum group size")
     parser.add_argument("--seed", type=int, default=1, help="seed")
+    parser.add_argument("--mps", default=False, action='store_true', help="Enable Apple Mac MPS")
 
     return parser.parse_args()
 

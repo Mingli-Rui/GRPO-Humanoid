@@ -10,7 +10,7 @@ class GRPOBuffer2:
     Buffer for storing trajectories
     """
 
-    def __init__(self, obs_dim, act_dim, size, num_envs, device, gamma=0.99, gae_lambda=0.95):
+    def __init__(self, obs_dim, act_dim, size, num_envs, device, ref, sigma, gamma=0.99, gae_lambda=0.95):
         # Initialize buffer
         self.capacity = size
         self.obs_dim = obs_dim
@@ -26,8 +26,10 @@ class GRPOBuffer2:
         self.gamma, self.gae_lambda = gamma, gae_lambda
         self.ptr = 0
         self.device = device
-        self.cluster_size = 64
-        self.min_cluster_size = 3
+        # self.cluster_size = 64
+        # self.min_cluster_size = 3
+        self.ref = ref
+        self.sigma = sigma
 
     def store(self, obs, act, rew, val, term, trunc, logprob, done_flag = None):
         """
@@ -63,7 +65,6 @@ class GRPOBuffer2:
 
         # Apply PCA (keeping first 10 components)
         pca_dim = 50
-        sigma = 1.0
         pca = PCA(n_components=pca_dim)
         states_pca = pca.fit_transform(states_scaled)
 
@@ -71,7 +72,7 @@ class GRPOBuffer2:
         states_pca = states_pca.reshape(orig_shape[0], orig_shape[1], pca_dim)
 
         # Step 2: Compute Weighted Smoothed States
-        def weighted_average_advantages(returns_at_t_orig, states_at_t_orig, done_at_t, sigma=0.5):
+        def weighted_average_advantages(returns_at_t_orig, states_at_t_orig, done_at_t):
             """
             Computes a weighted average of states at a given timestep across all trajectories.
             """
@@ -79,14 +80,29 @@ class GRPOBuffer2:
                 # print(done_at_t)
                 return np.zeros_like(returns_at_t_orig)
 
+            # if done_at_t.any():
+            #     print('find done')
+
             num_trajectories = states_at_t_orig.shape[0]
             # TODO Only care about states which are not done
             states_at_t = states_at_t_orig[done_at_t == False]
-            query_state = np.median(states_at_t, axis=0)  # Use median instead of mean
-            distances = np.linalg.norm(states_at_t - query_state, axis=1)
+            state_ref = None
+            if self.ref == "average":
+                state_ref = np.median(states_at_t, axis=0)
+            elif self.ref == "median":
+                state_ref = np.mean(states_at_t, axis=0)
+            elif self.ref == "max_reward":
+                # set rewards for done states as 0
+                adjusted_returns = returns_at_t_orig * (1 - done_at_t)
+                max_idx = np.argmax(adjusted_returns)
+                state_ref = states_at_t_orig[max_idx]
+            else:
+                assert self.ref in {'median', 'average', 'max_reward'}
+
+            distances = np.linalg.norm(states_at_t - state_ref, axis=1)
 
             # Compute similarity weights
-            weights = np.exp(-distances ** 2 / (2 * sigma ** 2))
+            weights = np.exp(-distances ** 2 / (2 * self.sigma ** 2))
             weights /= (np.sum(weights) + 1e-10)  # Normalize
 
             # weights_rewards = weights * returns_at_t
@@ -103,12 +119,12 @@ class GRPOBuffer2:
             src_idx = 0
             for i in range(adjust_advantage.shape[0]):
                 if not done_at_t[i]:
-                    adjust_advantage[i] = advantages[src_idx]
+                    adjust_advantage[i] = normalized_advantages[src_idx]
                     src_idx += 1
 
             return adjust_advantage # Compute weighted average state
 
-        advantages = np.array([weighted_average_advantages(ret_buf[t], states_pca[t], done_flags[t], sigma) for t in range(num_steps)])
+        advantages = np.array([weighted_average_advantages(ret_buf[t], states_pca[t], done_flags[t]) for t in range(num_steps)])
 
         return advantages  # Shape: (1024, 28)
 
