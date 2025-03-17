@@ -11,10 +11,10 @@ This repository is forked from https://github.com/ProfessorNova/PPO-Humanoid whi
 ![PPO Demo Gif](https://github.com/ProfessorNova/PPO-Humanoid/blob/main/docs/demo.gif)
 
 ## Results of GRPO with KMean cluster
-![GRPO with KMean Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_kmean.gif)
+![GRPO with KMean Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/main/docs/demo_kmean.gif)
 
 ## Results of GRPO with Similarity
-![GRPO with Similarity Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/m3/docs/demo_sim.gif)
+![GRPO with Similarity Demo Gif](https://github.com/Mingli-Rui/GRPO-Humanoid/blob/main/docs/demo_sim.gif)
 
 ## Demos on Youtube
 [![GRPO with KMean Demo Youtube](https://img.youtube.com/vi/pGOiNQByCzY/0.jpg)](https://www.youtube.com/watch?v=pGOiNQByCzY)

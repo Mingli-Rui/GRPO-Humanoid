@@ -91,13 +91,13 @@ class GRPOBuffer2:
                 state_ref = np.median(states_at_t, axis=0)
             elif self.ref == "median":
                 state_ref = np.mean(states_at_t, axis=0)
-            elif self.ref == "max_reward":
+            elif self.ref == "max_return":
                 # set rewards for done states as 0
                 adjusted_returns = returns_at_t_orig * (1 - done_at_t)
                 max_idx = np.argmax(adjusted_returns)
                 state_ref = states_at_t_orig[max_idx]
             else:
-                assert self.ref in {'median', 'average', 'max_reward'}
+                assert self.ref in {'median', 'average', 'max_return'}
 
             distances = np.linalg.norm(states_at_t - state_ref, axis=1)
 
@@ -122,7 +122,7 @@ class GRPOBuffer2:
                     adjust_advantage[i] = normalized_advantages[src_idx]
                     src_idx += 1
 
-            return adjust_advantage # Compute weighted average state
+            return adjust_advantage  # Compute weighted average state
 
         advantages = np.array([weighted_average_advantages(ret_buf[t], states_pca[t], done_flags[t]) for t in range(num_steps)])
 

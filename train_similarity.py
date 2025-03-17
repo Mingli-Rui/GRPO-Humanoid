@@ -127,7 +127,7 @@ def get_device(args):
 
 if __name__ == "__main__":
     args = parse_args()
-    assert args.ref in {'median', 'average', 'max_reward'}
+    assert args.ref in {'median', 'average', 'max_return'}
     # Support Mac mps
     device = get_device(args)
     print(f'train similarity with : {args.ref}, {args.sigma}')
